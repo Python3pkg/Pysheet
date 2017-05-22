@@ -15,8 +15,9 @@ import csv, sys, os, logging, re, traceback
 import argparse
 from numpy import reshape, floating
 from types import IntType
-from itertools import izip
-import cPickle
+from functools import reduce
+
+import pickle
 from time import sleep
 from datetime import datetime
 from random import random
@@ -583,7 +584,7 @@ class Pysheet:
         # do the skipping now
         skip_counter = 0
         while skip_counter < skip:
-            discard = iterator.next()
+            discard = next(iterator)
             skip_counter += 1
 
         # do transpose
@@ -592,7 +593,7 @@ class Pysheet:
             max_line_len = 0
             try:
                 while True: # need to go through file to remove comments & make sure it's square
-                    line = iterator.next()
+                    line = next(iterator)
                     line_len = len(line)
                     # skip blanks and comments
                     if line_len < max(self.MIN_LINE_LEN, 1) or \
@@ -616,7 +617,7 @@ class Pysheet:
         try:
             line = None
             while True:
-                line = iterator.next()
+                line = next(iterator)
                 line_len = len(line) - skipColR
                 # skip blank, short lines and comments
                 if line_len < max(self.MIN_LINE_LEN, 1) or str(line[0]).startswith(self.COMMENT_CHAR):
@@ -704,7 +705,7 @@ class Pysheet:
 
     def __iter__(self):
         """returns an iterator over the ID:row items in the csv"""
-        return self._rows.iteritems()
+        return iter(self._rows.items())
 
     def __len__(self):
         """returns the length of the header row in the dictionary"""
@@ -723,7 +724,7 @@ class Pysheet:
         headers=True adds columnheaders to the list returned
         exclude=True skips rows with a non-blank __exclude__ column
         lockedRows=True also returns rows whose ID starts with '__'"""
-        return [self[x][self.idColumn] for x in self._rows.keys() if \
+        return [self[x][self.idColumn] for x in list(self._rows.keys()) if \
                 (headers or x != self.HEADERS_ID) and (lockedRows or not x.startswith('__')) and \
                 (not exclude or not self.excluded(x))]
 
@@ -786,7 +787,7 @@ class Pysheet:
         """returns the headers of the columns in the dictionary
         (indices instead if index=True)"""
         if index:
-            ret = range(len(self))
+            ret = list(range(len(self)))
         else:
             ret = self[self.HEADERS_ID]
         if not idCol:
@@ -849,7 +850,7 @@ class Pysheet:
                 assert index >= 0 and index <= len(self), \
                         "index is not in a valid range [%d-%d]: %d" % (0, len(self), index)
 
-            for k in self._rows.keys():
+            for k in list(self._rows.keys()):
                 if k == self.HEADERS_ID:
                     if not header.strip().startswith('__'):
                         header = '__'+header.strip()
@@ -904,7 +905,7 @@ class Pysheet:
         oldlen = len(self)
         # merge the existing IDs
         merged = False
-        for i in self._rows.keys():
+        for i in list(self._rows.keys()):
             # check for headers row
             if i == self.HEADERS_ID:
                 item = other.pop(other.HEADERS_ID)
@@ -914,7 +915,7 @@ class Pysheet:
                 self[i] += item
                 merged = True # merged at least one thing
         # loop through the rest of the IDs, blank-padding to the left
-        for i in other._rows.keys():
+        for i in list(other._rows.keys()):
             self[i] = [self.BLANK_VALUE] * oldlen + other[i]
             merged = True
         # make it sqare again
@@ -942,7 +943,7 @@ class Pysheet:
             if not isList(cols):
                 cols=[cols]
             if 'ALL' in cols: # use all columns
-                rng = range(self.idColumn) + range(self.idColumn+1, len(self))
+                rng = list(range(self.idColumn)) + list(range(self.idColumn+1, len(self)))
                 ret = [rng, ['']*len(rng), ['']*len(rng)]
                 cols.remove("ALL")
             for i in range(len(cols)):
@@ -963,14 +964,14 @@ class Pysheet:
                             if to.isdigit(): # it is of the form e.g. '5-10'
                                 to = int(to)
                                 if to >= frm and frm < len(self) and to < len(self):
-                                    rng = range(frm, to+1)
+                                    rng = list(range(frm, to+1))
                                     ret[0].extend(rng)
                                     ret[1].extend(['']*len(rng))
                                     ret[2].extend(['']*len(rng))
                                     added = True
                             elif not to: # it is of the form e.g. '5-'
                                 # which means from column 5 till the last column
-                                rng = range(frm, len(self))
+                                rng = list(range(frm, len(self)))
                                 ret[0].extend(rng)
                                 ret[1].extend(['']*len(rng))
                                 ret[2].extend(['']*len(rng))
@@ -1027,7 +1028,7 @@ class Pysheet:
 
         # case we have some columns to join
         ret = []
-        for i in self._rows.keys():
+        for i in list(self._rows.keys()):
             hybrid = []
             if i == self.HEADERS_ID or (exclude and self.excluded(i)):
                 continue
@@ -1061,13 +1062,13 @@ class Pysheet:
 
         # check if we have columns to return
         if not extrct[0]: # return all columns
-            all_header_ind = range(self.idColumn) + range(self.idColumn+1, len(self))
+            all_header_ind = list(range(self.idColumn)) + list(range(self.idColumn+1, len(self)))
             extrct = [all_header_ind, [self.BLANK_VALUE]*len(all_header_ind), \
                     [self.BLANK_VALUE]*len(all_header_ind)]
 
         # case we have some columns to return
         ret = []
-        for i in self._rows.keys():
+        for i in list(self._rows.keys()):
             if exclude and self.excluded(i):
                 continue
             add = [] # initialize the row to be appended
@@ -1119,7 +1120,7 @@ class Pysheet:
     def expand(self):
         """blank-pads to make all rows as long as the headers"""
         headlen = len(self)
-        for i in self._rows.keys():
+        for i in list(self._rows.keys()):
             thislen = len(self[i])
             assert thislen <= headlen, ("Error in row %s. Greater than length "
             "of headers row (%d): %d") % (i, headlen, len(self[i]))
@@ -1138,7 +1139,7 @@ class Pysheet:
                         self.getHeaders()[j].lower().replace('__',''): # caught the same header!
                     deleteme.append(j)
                     # copy over new values
-                    for k in self._rows.keys():
+                    for k in list(self._rows.keys()):
                         if k != self.HEADERS_ID: # skip headers
                             if i == self.idColumn: # if merging IDs also use overwrite
                                 self[k][i] = self.mergedValue(self[k][i], self[k][j], mode='overwrite')
@@ -1151,7 +1152,7 @@ class Pysheet:
 
     def zeroFill(self, zero=0):
         """fills blank cells with zero"""
-        for k in self._rows.keys():
+        for k in list(self._rows.keys()):
             for h in range(len(self[k])):
                 if self[k][h] in [None, [], '', self.BLANK_VALUE]:
                     self[k][h]=zero
@@ -1197,7 +1198,7 @@ class Pysheet:
                     # then we need to update the idColumn
                     self.idColumn -= 1
             # now remove
-            for k in self._rows.keys():
+            for k in list(self._rows.keys()):
                 for c in cols:
                     del self[k][c]
 
@@ -1240,7 +1241,7 @@ class Pysheet:
             consolidations = [consolidations]
 
         # now insert the new headers
-        consolidationHeaders = izip(*consolidations).next() # get the new headers
+        consolidationHeaders = next(izip(*consolidations)) # get the new headers
         for header in consolidationHeaders:
             self.insertColumn(header)
 
@@ -1351,7 +1352,7 @@ class Pysheet:
             writer = csv.writer(sys.stdout, delimiter=delimiter)
         else:
             writer = csv.writer(open(output, "wb"), delimiter=delimiter)
-        keys = self._rows.keys()
+        keys = list(self._rows.keys())
         skipAutoID = False
         skipAutoIDColumn = -1
         ret = []
@@ -1391,7 +1392,7 @@ class Pysheet:
                 elif isNumber(row[col]):
                     line.append(str(row[col]))
                 else:
-                    line.append(cPickle.dumps(row[col]))
+                    line.append(pickle.dumps(row[col]))
             ret.append(line)
         if trans:
             writer.writerows(transpose(ret))
@@ -1500,7 +1501,7 @@ def isNumber(x, strOk=False):
         #len(filter((lambda i : not isNumber(i, strOk=strOk)),x)) == 0
     if strOk:
         x = tryNumber(x)
-    return isinstance(x, (int, long, float, floating))
+    return isinstance(x, (int, float, floating))
 
 def tryNumber(x):
     """tries to return an appropriate number from x or just x if not a number"""
@@ -1518,7 +1519,7 @@ def tryNumber(x):
 
 def transpose(arr):
     """transposes a nested list (2D-array)"""
-    return map(list, zip(*arr))
+    return list(map(list, list(zip(*arr))))
 
 def unique(seq, blanks=True):
     """returns a list of unique elements from seq"""
